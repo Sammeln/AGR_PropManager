@@ -13,7 +13,6 @@ using AgroventInfrastructure.Enums;
 using AGR_PropManager.Views;
 using AGR_PropManager.ViewModels.Components;
 using AGR_PropManager.ViewModels.TechProcess;
-using Agrovent.DAL.Services.Repositories;
 using System.Windows;
 using System.Windows.Controls;
 using AGR_PropManager.ViewModels.Reports;
@@ -32,73 +31,63 @@ namespace AGR_PropManager.ViewModels.Windows
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
-            // Инициализируем пустую коллекцию и View
             ClassifierItems = new ObservableCollection<ClassifierItemViewModel>();
             ClassifierItemsView = CollectionViewSource.GetDefaultView(ClassifierItems);
             ApplyFilter();
         }
 
-        // Пустой конструктор для дизайна
         public MainWindowViewModel() { }
         #endregion
 
         #region Commands
 
-        #region LoadClassifierDataCommand
         private ICommand _LoadClassifierDataCommand;
         public ICommand LoadClassifierDataCommand => _LoadClassifierDataCommand
-            ??= new RelayCommand(async (_) => await LoadClassifierDataAsync(), _ => !IsLoading); // Блокируем повторный вызов во время загрузки
-        #endregion
+            ??= new RelayCommand(async (_) => await LoadClassifierDataAsync(), _ => !IsLoading);
 
-        #region OpenItemTechProcessEditorCommand
-        // ... (Ваш код для OpenItemTechProcessEditorCommand остается без изменений) ...
         private ICommand _OpenItemTechProcessEditorCommand;
         public ICommand OpenItemTechProcessEditorCommand => _OpenItemTechProcessEditorCommand
             ??= new RelayCommand<ClassifierItemViewModel>(OnOpenItemTechProcessEditorCommandExecuted, CanOpenItemTechProcessEditorCommandExecute);
+
         private bool CanOpenItemTechProcessEditorCommandExecute(ClassifierItemViewModel? p) => p != null;
+
         private void OnOpenItemTechProcessEditorCommandExecuted(ClassifierItemViewModel? classifierItem)
         {
             if (classifierItem == null) return;
+
             _logger.LogInformation($"Открытие редактора процесса для компонента {classifierItem.PartNumber}.");
 
-            using (var scope = _scopeFactory.CreateScope())
+            // ViewModel редактора не получает ни DataContext, ни UnitOfWork.
+            // Они создаются внутри короткоживущих scope для конкретных операций.
+            var component = new ComponentItemViewModel(_scopeFactory)
             {
-                var dataContext = scope.ServiceProvider.GetRequiredService<DataContext>();
-                var unitOfWork = scope.ServiceProvider.GetRequiredService<UnitOfWork>();
+                PartNumber = classifierItem.PartNumber,
+                Name = classifierItem.Name,
+                PreviewImage = classifierItem.PreviewImage,
+                ComponentType = classifierItem.ComponentType
+            };
 
-                var component = new ComponentItemViewModel(dataContext, unitOfWork)
-                {
-                    PartNumber = classifierItem.PartNumber,
-                    Name = classifierItem.Name,
-                    PreviewImage = classifierItem.PreviewImage,
-                    ComponentType = classifierItem.ComponentType
-                };
+            var editorViewModel = new TechProcessEditorViewModel(component, _logger, _scopeFactory);
+            var editorWindow = new TechProcessEditorWindow(editorViewModel)
+            {
+                Owner = Application.Current.MainWindow,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
 
-                var editorViewModel = new TechProcessEditorViewModel(component, dataContext, _logger, unitOfWork, _scopeFactory);
-                var editorWindow = new TechProcessEditorWindow(editorViewModel)
-                {
-                    Owner = Application.Current.MainWindow,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner
-                };
-                editorWindow.ShowDialog(); // блокирует — scope не закроется, пока редактор открыт
-            } // здесь DataContext редактора освобождается
+            editorWindow.ShowDialog();
         }
-        #endregion
 
         #endregion
 
         #region PROPS
 
-        #region IsLoading (Новое свойство для индикации загрузки)
         private bool _IsLoading;
         public bool IsLoading
         {
             get => _IsLoading;
             set => Set(ref _IsLoading, value);
         }
-        #endregion
 
-        #region SearchText
         private string _SearchText = "";
         public string SearchText
         {
@@ -106,49 +95,41 @@ namespace AGR_PropManager.ViewModels.Windows
             set
             {
                 if (Set(ref _SearchText, value))
-                {
                     ApplyFilter();
-                }
             }
         }
-        #endregion
 
-        #region Коллекция ClassifierItems
-        private ObservableCollection<ClassifierItemViewModel> _ClassifierItems = new ObservableCollection<ClassifierItemViewModel>();
+        private ObservableCollection<ClassifierItemViewModel> _ClassifierItems = new();
         public ObservableCollection<ClassifierItemViewModel> ClassifierItems
         {
             get => _ClassifierItems;
             set => Set(ref _ClassifierItems, value);
         }
-        #endregion
 
-        #region CollectionViewSource для ClassifierItems
-        // Делаем set приватным, чтобы иметь возможность переназначить View при обновлении коллекции
         public ICollectionView ClassifierItemsView { get; private set; }
-        #endregion
 
         #endregion
 
         #region Methods
 
-        #region Метод загрузки данных классификатора
         public async Task LoadClassifierDataAsync()
         {
-            if (IsLoading) return; // Защита от двойного клика
+            if (IsLoading) return;
+
             IsLoading = true;
             try
             {
                 _logger.LogInformation("Загрузка данных классификатора...");
+
                 IEnumerable<ComponentVersion> latestVersions;
-                // 1. Асинхронный запрос к БД (не блокирует UI)
+
+                // READ: scope -> query -> materialize -> dispose.
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var unitOfWork = scope.ServiceProvider.GetRequiredService<UnitOfWork>();
-                   latestVersions = await unitOfWork.ComponentRepository.GetAllLatestComponentVersionsAsync();
-                } // DataContext закрывается здесь, до тяжёлого маппинга картинок
+                    latestVersions = (await unitOfWork.ComponentRepository.GetAllLatestComponentVersionsAsync()).ToList();
+                }
 
-                // 2. Тяжелая работа (маппинг и декодирование картинок) в фоновом потоке!
-                // BitmapImage можно создавать в фоновом потоке, так как в LoadImageFromBytes вызывается image.Freeze()
                 var items = await Task.Run(() =>
                 {
                     var list = new List<ClassifierItemViewModel>();
@@ -168,11 +149,7 @@ namespace AGR_PropManager.ViewModels.Windows
                     return list;
                 });
 
-                // 3. Возвращаемся в UI поток. 
-                // Вместо медленного добавления по одному, создаем новую коллекцию и присваиваем её.
                 ClassifierItems = new ObservableCollection<ClassifierItemViewModel>(items);
-
-                // Пересоздаем View для новой коллекции и уведомляем UI
                 ClassifierItemsView = CollectionViewSource.GetDefaultView(ClassifierItems);
                 ApplyFilter();
                 OnPropertyChanged(nameof(ClassifierItemsView));
@@ -185,12 +162,10 @@ namespace AGR_PropManager.ViewModels.Windows
             }
             finally
             {
-                IsLoading = false; // Скрываем индикатор загрузки в любом случае
+                IsLoading = false;
             }
         }
-        #endregion
 
-        #region Применение фильтра
         private void ApplyFilter()
         {
             if (string.IsNullOrWhiteSpace(SearchText))
@@ -212,11 +187,10 @@ namespace AGR_PropManager.ViewModels.Windows
                     return matchesPartNumber || matchesName;
                 };
             }
+
             ClassifierItemsView.Refresh();
         }
-        #endregion
 
-        #region Вспомогательный метод для загрузки изображения
         private BitmapImage? LoadImageFromBytes(byte[] imageData)
         {
             try
@@ -227,7 +201,7 @@ namespace AGR_PropManager.ViewModels.Windows
                 image.StreamSource = ms;
                 image.CacheOption = BitmapCacheOption.OnLoad;
                 image.EndInit();
-                image.Freeze(); // КРИТИЧЕСКИ ВАЖНО: позволяет использовать картинку из фонового потока
+                image.Freeze();
                 return image;
             }
             catch
@@ -235,7 +209,6 @@ namespace AGR_PropManager.ViewModels.Windows
                 return null;
             }
         }
-        #endregion
 
         #endregion
     }
