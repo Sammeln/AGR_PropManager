@@ -8,9 +8,8 @@ using AGR_PropManager.ViewModels.Base;
 using AGR_PropManager.ViewModels.Components;
 using AGR_PropManager.ViewModels.TechProcess;
 using Agrovent.DAL;
-using Agrovent.DAL.Services.Repositories;
 using AgroventInfrastructure.Enums;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AGR_PropManager.ViewModels.Windows
@@ -19,24 +18,23 @@ namespace AGR_PropManager.ViewModels.Windows
     {
         private readonly ILogger? _logger;
         private readonly ObservableCollection<ComponentItemViewModel> _selectedComponents;
-        private readonly UnitOfWork _unitOfWork;
+        private readonly IServiceScopeFactory? _scopeFactory;
 
         #region CTOR
         public OperationSelectionViewModel(
             ObservableCollection<ComponentItemViewModel> selectedComponents,
-            UnitOfWork unitOfWork,
+            IServiceScopeFactory scopeFactory,
             ILogger? logger = null)
         {
             _logger = logger;
             _selectedComponents = selectedComponents ?? new ObservableCollection<ComponentItemViewModel>();
-            _unitOfWork = unitOfWork;
+            _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
 
             TemplateOperationsView = CollectionViewSource.GetDefaultView(TemplateOperations);
             TemplateOperationsView.Filter = FilterTemplateOperations;
-            LoadTemplateOperationsAsync();
+            _ = LoadTemplateOperationsAsync();
         }
 
-        // Конструктор по умолчанию (для Design-time)
         public OperationSelectionViewModel() { }
         #endregion
 
@@ -46,7 +44,6 @@ namespace AGR_PropManager.ViewModels.Windows
 
         public ICollectionView TemplateOperationsView { get; }
 
-        #region SearchText
         private string? _searchText;
         public string? SearchText
         {
@@ -54,12 +51,9 @@ namespace AGR_PropManager.ViewModels.Windows
             set
             {
                 if (Set(ref _searchText, value))
-                {
                     TemplateOperationsView.Refresh();
-                }
             }
         }
-        #endregion
 
         private TemplateOperationItemViewModel? _selectedOperation;
         public TemplateOperationItemViewModel? SelectedOperation
@@ -67,117 +61,131 @@ namespace AGR_PropManager.ViewModels.Windows
             get => _selectedOperation;
             set => Set(ref _selectedOperation, value);
         }
-
         #endregion
 
         #region Commands
-
-        #region CloseCommand
         private ICommand _CloseCommand;
         public ICommand CloseCommand => _CloseCommand
             ??= new RelayCommand(OnCloseCommandExecuted, CanCloseCommandExecute);
         private bool CanCloseCommandExecute(object p) => true;
-        private void OnCloseCommandExecuted(object p)
-        {
-            CloseRequested?.Invoke(this, EventArgs.Empty);
-        }
-        #endregion
+        private void OnCloseCommandExecuted(object p) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
-        #region SetOperationCommand
         private ICommand _setOperationCommand;
         public ICommand SetOperationCommand => _setOperationCommand
             ??= new RelayCommand<TemplateOperationItemViewModel>(
                 OnSetOperationCommandExecuted,
-                CanSetOperationCommandExecute
-            );
+                CanSetOperationCommandExecute);
 
         private bool CanSetOperationCommandExecute(TemplateOperationItemViewModel? p) =>
             p != null && _selectedComponents.Any();
 
+        /// <summary>
+        /// BATCH WRITE: один scope на всю операцию + одна transaction.
+        /// Scope живёт ровно столько, сколько длится изменение всех выбранных компонентов.
+        /// </summary>
         private async void OnSetOperationCommandExecuted(TemplateOperationItemViewModel? selectedOpVm)
         {
             if (selectedOpVm == null || !_selectedComponents.Any()) return;
             if (_selectedComponents.Any(x => x.ComponentType == AGR_ComponentType_e.Purchased)) return;
+            if (_scopeFactory == null) return;
 
             _logger?.LogInformation($"Попытка добавить операцию '{selectedOpVm.Name}' в техпроцессы {_selectedComponents.Count} выделенных компонентов.");
 
             try
             {
-                // Начинаем транзакцию
-                await _unitOfWork.BeginTransactionAsync();
-                // Обрабатываем каждый компонент последовательно, чтобы избежать параллельных операций с контекстом
-                foreach (var compVm in _selectedComponents)
-                {
-                    await ProcessSingleComponent(compVm, selectedOpVm);
-                }
-                
-                // Сохраняем все изменения в рамках одной транзакции
-                await _unitOfWork.CompleteAsync();
+                using var scope = _scopeFactory.CreateScope();
+                var unitOfWork = scope.ServiceProvider.GetRequiredService<UnitOfWork>();
 
-                // Фиксируем транзакцию
-                await _unitOfWork.CommitTransactionAsync();
+                await unitOfWork.BeginTransactionAsync();
+                try
+                {
+                    foreach (var compVm in _selectedComponents)
+                        await ProcessSingleComponent(unitOfWork, compVm, selectedOpVm);
+
+                    await unitOfWork.CompleteAsync();
+                    await unitOfWork.CommitTransactionAsync();
+                }
+                catch
+                {
+                    await unitOfWork.RollbackTransactionAsync();
+                    throw;
+                }
 
                 _logger?.LogInformation($"Все изменения успешно сохранены в БД. Добавлено операций: {_selectedComponents.Count}.");
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, $"Ошибка при добавлении операции в техпроцессы выделенных компонентов.");
+                _logger?.LogError(ex, "Ошибка при добавлении операции в техпроцессы выделенных компонентов.");
             }
         }
-        private async Task ProcessSingleComponent(ComponentItemViewModel compVm, TemplateOperationItemViewModel selectedOpVm)
+
+        private async Task ProcessSingleComponent(
+            UnitOfWork unitOfWork,
+            ComponentItemViewModel compVm,
+            TemplateOperationItemViewModel selectedOpVm)
         {
             _logger?.LogDebug($"Обработка компонента {compVm.PartNumber}.");
 
-            // 1. Получить/создать техпроцесс через репозиторий
-            var entityTechProcess = await _unitOfWork.TechProcessRepository.GetOrCreateForComponentAsync(compVm.PartNumber);
+            var entityTechProcess = await unitOfWork.TechProcessRepository
+                .GetOrCreateForComponentAsync(compVm.PartNumber);
+
             _logger?.LogDebug($"Получен/создан техпроцесс ID: {entityTechProcess.Id} для {compVm.PartNumber}.");
 
-            // 2. Вычислить SequenceNumber
             int nextSequenceNumber = entityTechProcess.Operations.Count + 1;
 
-            // 3. Добавить операцию через репозиторий
-            var newOpEntity = await _unitOfWork.TechProcessRepository.AddOperationAsync(
+            var newOpEntity = await unitOfWork.TechProcessRepository.AddOperationAsync(
                 entityTechProcess,
                 selectedOpVm.TemplateOperation,
-                nextSequenceNumber
-            );
+                nextSequenceNumber);
 
-            // Обновляем CostPerHour в сущности операции
-            newOpEntity.CostPerHour = SetLabour(compVm, selectedOpVm);
-            await _unitOfWork.TechProcessRepository.UpdateOperationAsync(newOpEntity);
+            var labour = SetLabour(compVm, selectedOpVm);
+            newOpEntity.CostPerHour = labour;
+            await unitOfWork.TechProcessRepository.UpdateOperationAsync(newOpEntity);
 
             _logger?.LogDebug($"Создана сущность Operation ID: {newOpEntity.Id} для техпроцесса {entityTechProcess.Id}.");
 
-            // 4. Создать ViewModel для новой операции и добавить в коллекцию UI
-            var newOpVm = new TechOperationViewModel(newOpEntity);
-            newOpVm.ParentComponent = compVm; // Устанавливаем связь с родительским компонентом
-            newOpVm.CostPerHour = SetLabour(compVm, selectedOpVm);
-            newOpVm.SequenceNumber = nextSequenceNumber;
+            var newOpVm = new TechOperationViewModel(newOpEntity)
+            {
+                ParentComponent = compVm,
+                CostPerHour = labour,
+                SequenceNumber = nextSequenceNumber
+            };
 
             newOpVm.PropertyChanged += compVm.Item_PropertyChanged;
             compVm.Operations.Add(newOpVm);
 
             _logger?.LogDebug($"Операция '{newOpVm.Name}' (Seq: {newOpVm.SequenceNumber}) добавлена в ViewModel компонента '{compVm.PartNumber}'.");
         }
-
-        #endregion
-
         #endregion
 
         public event EventHandler? CloseRequested;
 
-        private async void LoadTemplateOperationsAsync()
+        /// <summary>
+        /// READ: новый scope -> запрос -> materialize -> dispose.
+        /// </summary>
+        private async Task LoadTemplateOperationsAsync()
         {
-            TemplateOperations.Clear();
+            if (_scopeFactory == null) return;
 
-            var opsFromDb = await _unitOfWork.TechProcessRepository.GetTemplateOperationAsync();
-
-            foreach (var op in opsFromDb)
+            try
             {
-                TemplateOperations.Add(new TemplateOperationItemViewModel(op));
-            }
+                List<AgroventInfrastructure.Entities.Components.Operation> opsFromDb;
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var unitOfWork = scope.ServiceProvider.GetRequiredService<UnitOfWork>();
+                    opsFromDb = (await unitOfWork.TechProcessRepository.GetTemplateOperationAsync()).ToList();
+                }
 
-            _logger?.LogInformation($"Загружено {TemplateOperations.Count} шаблонных операций.");
+                TemplateOperations.Clear();
+                foreach (var op in opsFromDb)
+                    TemplateOperations.Add(new TemplateOperationItemViewModel(op));
+
+                _logger?.LogInformation($"Загружено {TemplateOperations.Count} шаблонных операций.");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Ошибка загрузки шаблонных операций.");
+            }
         }
 
         private bool FilterTemplateOperations(object item)
@@ -189,10 +197,9 @@ namespace AGR_PropManager.ViewModels.Windows
                 return true;
 
             string[] splitSearch = SearchText.Split(' ').ToArray();
-
             if (templateOperation.Name is null) return true;
-            if (splitSearch.All(s => templateOperation.Name.Contains(s.ToString(), StringComparison.OrdinalIgnoreCase))) return true;
-            if (splitSearch.All(s => templateOperation.WorkstationName.Contains(s.ToString(), StringComparison.OrdinalIgnoreCase))) return true;
+            if (splitSearch.All(s => templateOperation.Name.Contains(s, StringComparison.OrdinalIgnoreCase))) return true;
+            if (splitSearch.All(s => templateOperation.WorkstationName.Contains(s, StringComparison.OrdinalIgnoreCase))) return true;
 
             return false;
         }
@@ -200,11 +207,9 @@ namespace AGR_PropManager.ViewModels.Windows
         private decimal SetLabour(ComponentItemViewModel component, TemplateOperationItemViewModel sector)
         {
             decimal cost = 0;
-
             float blankContSum = 0;
             float blankThick = 0;
             int? blankBends = 0;
-
             float blanklen = 0;
             float blankVolume = 0;
             float blankMass = 0;
@@ -213,7 +218,6 @@ namespace AGR_PropManager.ViewModels.Windows
             {
                 blankVolume = float.Parse(component.PropertiesCollection.FirstOrDefault(
                     prop => prop.Name == AGR_PropertyNames.BlankVolume)?.Value ?? "0");
-
                 blankMass = float.Parse(component.PropertiesCollection.FirstOrDefault(
                     prop => prop.Name == AGR_PropertyNames.BlankMass)?.Value ?? "0");
 
@@ -226,7 +230,6 @@ namespace AGR_PropManager.ViewModels.Windows
                 if (component.ComponentType == AGR_ComponentType_e.SheetMetallPart)
                 {
                     blankBends = component.BendCount;
-
                     blankContSum = float.Parse(component.ContourLength.ToString());
                     blankThick = float.Parse(component.PropertiesCollection.FirstOrDefault(
                         prop => prop.Name == AGR_PropertyNames.BlankThick)?.Value ?? "0");
@@ -234,111 +237,72 @@ namespace AGR_PropManager.ViewModels.Windows
             }
             catch (Exception)
             {
-                // Логирование ошибки может быть добавлено
             }
 
             try
             {
                 switch (sector.WorkStationId)
                 {
-                    // Гибка. Участок 13.
                     case 13:
-                    var tmpCost = blankBends * 0.3 + 0.25;
-                    cost = Math.Round((decimal)tmpCost,3,MidpointRounding.ToPositiveInfinity);
-                    break;
+                        var tmpCost = blankBends * 0.3 + 0.25;
+                        cost = Math.Round((decimal)tmpCost, 3, MidpointRounding.ToPositiveInfinity);
+                        break;
 
-                    // Вырубка на трумпфе/лазере. Участок 14.
                     case 14:
                     case 87:
-                    if (sector.Name.Contains("Написать", StringComparison.OrdinalIgnoreCase))
-                    {
-                        cost = 0.17m;
-                    }
-                    else
-                    {
-                        if (blankThick <= 0.55f)
+                        if (sector.Name.Contains("Написать", StringComparison.OrdinalIgnoreCase))
                         {
-                            tmpCost = blankContSum / 1000 * 0.05;
-                            cost = (decimal)tmpCost;
+                            cost = 0.17m;
                         }
-                        else if (blankThick <= 0.7f)
+                        else
                         {
-                            tmpCost = blankContSum / 1000 * 0.08;
-                            cost = (decimal)tmpCost;
-                        }
-                        else if (blankThick <= 1f)
-                        {
-                            tmpCost = blankContSum / 1000 * 0.03;
-                            cost = (decimal)tmpCost;
-                        }
-                        else if (blankThick <= 1.5f)
-                        {
-                            tmpCost = blankContSum / 1000 * 0.09;
-                            cost = (decimal)tmpCost;
-                        }
-                        else if (blankThick <= 2f)
-                        {
-                            tmpCost = blankContSum / 1000 * 0.2;
-                            cost = (decimal)tmpCost;
-                        }
-                        else if (blankThick <= 3f)
-                        {
-                            tmpCost = blankContSum / 1000 * 0.4;
-                            cost = (decimal)tmpCost;
-                        }
-                        else if (blankThick > 3f)
-                        {
-                            tmpCost = blankContSum / 1000 * 0.9;
-                            cost = (decimal)tmpCost;
-                        }
-                        cost = Math.Round(cost, 3, MidpointRounding.ToPositiveInfinity);
-                    }
-                    break;
+                            if (blankThick <= 0.55f)
+                                cost = (decimal)(blankContSum / 1000 * 0.05);
+                            else if (blankThick <= 0.7f)
+                                cost = (decimal)(blankContSum / 1000 * 0.08);
+                            else if (blankThick <= 1f)
+                                cost = (decimal)(blankContSum / 1000 * 0.03);
+                            else if (blankThick <= 1.5f)
+                                cost = (decimal)(blankContSum / 1000 * 0.09);
+                            else if (blankThick <= 2f)
+                                cost = (decimal)(blankContSum / 1000 * 0.2);
+                            else if (blankThick <= 3f)
+                                cost = (decimal)(blankContSum / 1000 * 0.4);
+                            else if (blankThick > 3f)
+                                cost = (decimal)(blankContSum / 1000 * 0.9);
 
-                    // Отбортовка. Участок 71.
+                            cost = Math.Round(cost, 3, MidpointRounding.ToPositiveInfinity);
+                        }
+                        break;
+
                     case 71:
-                    cost = 18m;
-                    break;
-
-                    // Покрасочная камера. Участок 70.
+                        cost = 18m;
+                        break;
                     case 70:
-                    cost = 3m;
-                    break;
-
-                    // Формовка. Участок 64.
+                        cost = 3m;
+                        break;
                     case 64:
-                    cost = 20;
-                    break;
-
-                    // Пила пластик. Участок 75.
+                        cost = 20m;
+                        break;
                     case 75:
-                    cost = 0.6m;
-                    break;
-
-                    // Пила FE. Участок 79.
+                        cost = 0.6m;
+                        break;
                     case 79:
-                    cost = 1m;
-                    break;
-
-                    // Пила AL. Участок 78.
+                        cost = 1m;
+                        break;
                     case 78:
-                    cost = 2.9m;
-                    break;
-
-                    // Гильотина. Участок 76.
+                        cost = 2.9m;
+                        break;
                     case 76:
-                    cost = 0.15m;
-                    break;
-
-                    // Правильно-отрезной. Участок 74.
+                        cost = 0.15m;
+                        break;
                     case 74:
-                    tmpCost = Math.Round((blanklen / 1000 * 0.025), 3, MidpointRounding.ToPositiveInfinity);
-                    cost = (decimal)tmpCost;
-                    break;
-
+                        tmpCost = Math.Round(blanklen / 1000 * 0.025, 3, MidpointRounding.ToPositiveInfinity);
+                        cost = (decimal)tmpCost;
+                        break;
                     default:
-                    cost = 0;
-                    break;
+                        cost = 0;
+                        break;
                 }
             }
             catch (Exception)
