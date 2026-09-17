@@ -67,7 +67,10 @@ namespace AGR_PropManager.ViewModels.Windows
                 else if (_selectedComponent.ComponentType is AGR_ComponentType_e.Part or AGR_ComponentType_e.SheetMetallPart)
                     await LoadPartDataAsync(_selectedComponent.PartNumber, _loadingCts.Token);
 
+                // ComponentsView должен быть создан до того, как XAML попытается
+                // привязаться к нему. Дополнительно уведомляем binding после Source.
                 Components_CVS.Source = Components;
+                OnPropertyChanged(nameof(ComponentsView));
                 RefreshGrouping();
 
                 foreach (var item in Components)
@@ -741,7 +744,7 @@ namespace AGR_PropManager.ViewModels.Windows
                         errors.Add($"У компонента {item.PartNumber}.{item.Name} не указан цвет покраски но есть операции покраски");
                 }
 
-                Application.Current.Dispatcher.Invoke(() =>
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
                     Errors = errors.Any() ? string.Join("\n", errors) : null;
                     HasErrors = errors.Any();
