@@ -1,6 +1,4 @@
 ﻿using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
 using AGR_PropManager.Infrastructure.Commands;
@@ -20,7 +18,6 @@ namespace AGR_PropManager.ViewModels.Windows
         private readonly ObservableCollection<ComponentItemViewModel> _selectedComponents;
         private readonly IServiceScopeFactory? _scopeFactory;
 
-        #region CTOR
         public OperationSelectionViewModel(
             ObservableCollection<ComponentItemViewModel> selectedComponents,
             IServiceScopeFactory scopeFactory,
@@ -36,23 +33,16 @@ namespace AGR_PropManager.ViewModels.Windows
         }
 
         public OperationSelectionViewModel() { }
-        #endregion
 
-        #region PROPS
         private ObservableCollection<TemplateOperationItemViewModel> _templateOperations = new();
         public ObservableCollection<TemplateOperationItemViewModel> TemplateOperations => _templateOperations;
-
         public ICollectionView TemplateOperationsView { get; }
 
         private string? _searchText;
         public string? SearchText
         {
             get => _searchText;
-            set
-            {
-                if (Set(ref _searchText, value))
-                    TemplateOperationsView.Refresh();
-            }
+            set { if (Set(ref _searchText, value)) TemplateOperationsView.Refresh(); }
         }
 
         private TemplateOperationItemViewModel? _selectedOperation;
@@ -61,35 +51,26 @@ namespace AGR_PropManager.ViewModels.Windows
             get => _selectedOperation;
             set => Set(ref _selectedOperation, value);
         }
-        #endregion
 
-        #region Commands
         private ICommand _CloseCommand;
-        public ICommand CloseCommand => _CloseCommand
-            ??= new RelayCommand(OnCloseCommandExecuted, CanCloseCommandExecute);
-        private bool CanCloseCommandExecute(object p) => true;
+        public ICommand CloseCommand => _CloseCommand ??= new RelayCommand(OnCloseCommandExecuted, p => true);
         private void OnCloseCommandExecuted(object p) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
         private ICommand _setOperationCommand;
         public ICommand SetOperationCommand => _setOperationCommand
-            ??= new RelayCommand<TemplateOperationItemViewModel>(
-                OnSetOperationCommandExecuted,
-                CanSetOperationCommandExecute);
+            ??= new RelayCommand<TemplateOperationItemViewModel>(OnSetOperationCommandExecuted, CanSetOperationCommandExecute);
 
-        private bool CanSetOperationCommandExecute(TemplateOperationItemViewModel? p) =>
-            p != null && _selectedComponents.Any();
+        private bool CanSetOperationCommandExecute(TemplateOperationItemViewModel? p) => p != null && _selectedComponents.Any();
 
         /// <summary>
-        /// BATCH WRITE: один scope на всю операцию + одна transaction.
-        /// Scope живёт ровно столько, сколько длится изменение всех выбранных компонентов.
+        /// BATCH WRITE: один scope + одна transaction на изменение всех выбранных компонентов.
+        /// Внутри ProcessSingleComponent не создаётся новый scope.
         /// </summary>
         private async void OnSetOperationCommandExecuted(TemplateOperationItemViewModel? selectedOpVm)
         {
             if (selectedOpVm == null || !_selectedComponents.Any()) return;
             if (_selectedComponents.Any(x => x.ComponentType == AGR_ComponentType_e.Purchased)) return;
             if (_scopeFactory == null) return;
-
-            _logger?.LogInformation($"Попытка добавить операцию '{selectedOpVm.Name}' в техпроцессы {_selectedComponents.Count} выделенных компонентов.");
 
             try
             {
@@ -99,8 +80,8 @@ namespace AGR_PropManager.ViewModels.Windows
                 await unitOfWork.BeginTransactionAsync();
                 try
                 {
-                    foreach (var compVm in _selectedComponents)
-                        await ProcessSingleComponent(unitOfWork, compVm, selectedOpVm);
+                    foreach (var component in _selectedComponents)
+                        await ProcessSingleComponent(unitOfWork, component, selectedOpVm);
 
                     await unitOfWork.CompleteAsync();
                     await unitOfWork.CommitTransactionAsync();
@@ -111,7 +92,7 @@ namespace AGR_PropManager.ViewModels.Windows
                     throw;
                 }
 
-                _logger?.LogInformation($"Все изменения успешно сохранены в БД. Добавлено операций: {_selectedComponents.Count}.");
+                _logger?.LogInformation("Все изменения успешно сохранены в БД. Добавлено операций: {Count}.", _selectedComponents.Count);
             }
             catch (Exception ex)
             {
@@ -124,13 +105,7 @@ namespace AGR_PropManager.ViewModels.Windows
             ComponentItemViewModel compVm,
             TemplateOperationItemViewModel selectedOpVm)
         {
-            _logger?.LogDebug($"Обработка компонента {compVm.PartNumber}.");
-
-            var entityTechProcess = await unitOfWork.TechProcessRepository
-                .GetOrCreateForComponentAsync(compVm.PartNumber);
-
-            _logger?.LogDebug($"Получен/создан техпроцесс ID: {entityTechProcess.Id} для {compVm.PartNumber}.");
-
+            var entityTechProcess = await unitOfWork.TechProcessRepository.GetOrCreateForComponentAsync(compVm.PartNumber);
             int nextSequenceNumber = entityTechProcess.Operations.Count + 1;
 
             var newOpEntity = await unitOfWork.TechProcessRepository.AddOperationAsync(
@@ -142,26 +117,22 @@ namespace AGR_PropManager.ViewModels.Windows
             newOpEntity.CostPerHour = labour;
             await unitOfWork.TechProcessRepository.UpdateOperationAsync(newOpEntity);
 
-            _logger?.LogDebug($"Создана сущность Operation ID: {newOpEntity.Id} для техпроцесса {entityTechProcess.Id}.");
-
+            // Constructor заполняет CostPerHour до ParentComponent, поэтому локальная
+            // инициализация VM не вызывает повторный DB write внутри batch scope.
             var newOpVm = new TechOperationViewModel(newOpEntity)
             {
                 ParentComponent = compVm,
-                CostPerHour = labour,
                 SequenceNumber = nextSequenceNumber
             };
 
             newOpVm.PropertyChanged += compVm.Item_PropertyChanged;
             compVm.Operations.Add(newOpVm);
-
-            _logger?.LogDebug($"Операция '{newOpVm.Name}' (Seq: {newOpVm.SequenceNumber}) добавлена в ViewModel компонента '{compVm.PartNumber}'.");
         }
-        #endregion
 
         public event EventHandler? CloseRequested;
 
         /// <summary>
-        /// READ: новый scope -> запрос -> materialize -> dispose.
+        /// READ: scope -> query -> materialize -> dispose.
         /// </summary>
         private async Task LoadTemplateOperationsAsync()
         {
@@ -169,18 +140,17 @@ namespace AGR_PropManager.ViewModels.Windows
 
             try
             {
-                List<AgroventInfrastructure.Entities.Components.Operation> opsFromDb;
+                List<TemplateOperationItemViewModel> snapshot;
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var unitOfWork = scope.ServiceProvider.GetRequiredService<UnitOfWork>();
-                    opsFromDb = (await unitOfWork.TechProcessRepository.GetTemplateOperationAsync()).ToList();
+                    var operations = (await unitOfWork.TechProcessRepository.GetTemplateOperationAsync()).ToList();
+                    snapshot = operations.Select(op => new TemplateOperationItemViewModel(op)).ToList();
                 }
 
                 TemplateOperations.Clear();
-                foreach (var op in opsFromDb)
-                    TemplateOperations.Add(new TemplateOperationItemViewModel(op));
-
-                _logger?.LogInformation($"Загружено {TemplateOperations.Count} шаблонных операций.");
+                foreach (var operation in snapshot)
+                    TemplateOperations.Add(operation);
             }
             catch (Exception ex)
             {
@@ -190,17 +160,13 @@ namespace AGR_PropManager.ViewModels.Windows
 
         private bool FilterTemplateOperations(object item)
         {
-            if (item is not TemplateOperationItemViewModel templateOperation)
-                return false;
+            if (item is not TemplateOperationItemViewModel templateOperation) return false;
+            if (string.IsNullOrWhiteSpace(SearchText)) return true;
 
-            if (string.IsNullOrWhiteSpace(SearchText))
-                return true;
-
-            string[] splitSearch = SearchText.Split(' ').ToArray();
+            string[] splitSearch = SearchText.Split(' ');
             if (templateOperation.Name is null) return true;
             if (splitSearch.All(s => templateOperation.Name.Contains(s, StringComparison.OrdinalIgnoreCase))) return true;
             if (splitSearch.All(s => templateOperation.WorkstationName.Contains(s, StringComparison.OrdinalIgnoreCase))) return true;
-
             return false;
         }
 
@@ -211,33 +177,23 @@ namespace AGR_PropManager.ViewModels.Windows
             float blankThick = 0;
             int? blankBends = 0;
             float blanklen = 0;
-            float blankVolume = 0;
-            float blankMass = 0;
 
             try
             {
-                blankVolume = float.Parse(component.PropertiesCollection.FirstOrDefault(
-                    prop => prop.Name == AGR_PropertyNames.BlankVolume)?.Value ?? "0");
-                blankMass = float.Parse(component.PropertiesCollection.FirstOrDefault(
-                    prop => prop.Name == AGR_PropertyNames.BlankMass)?.Value ?? "0");
+                _ = float.Parse(component.PropertiesCollection.FirstOrDefault(p => p.Name == AGR_PropertyNames.BlankVolume)?.Value ?? "0");
+                _ = float.Parse(component.PropertiesCollection.FirstOrDefault(p => p.Name == AGR_PropertyNames.BlankMass)?.Value ?? "0");
 
                 if (component.ComponentType == AGR_ComponentType_e.Part)
-                {
-                    blanklen = float.Parse(component.PropertiesCollection.FirstOrDefault(
-                        prop => prop.Name == AGR_PropertyNames.BlankLen)?.Value ?? "0");
-                }
+                    blanklen = float.Parse(component.PropertiesCollection.FirstOrDefault(p => p.Name == AGR_PropertyNames.BlankLen)?.Value ?? "0");
 
                 if (component.ComponentType == AGR_ComponentType_e.SheetMetallPart)
                 {
                     blankBends = component.BendCount;
                     blankContSum = float.Parse(component.ContourLength.ToString());
-                    blankThick = float.Parse(component.PropertiesCollection.FirstOrDefault(
-                        prop => prop.Name == AGR_PropertyNames.BlankThick)?.Value ?? "0");
+                    blankThick = float.Parse(component.PropertiesCollection.FirstOrDefault(p => p.Name == AGR_PropertyNames.BlankThick)?.Value ?? "0");
                 }
             }
-            catch (Exception)
-            {
-            }
+            catch { }
 
             try
             {
@@ -247,68 +203,35 @@ namespace AGR_PropManager.ViewModels.Windows
                         var tmpCost = blankBends * 0.3 + 0.25;
                         cost = Math.Round((decimal)tmpCost, 3, MidpointRounding.ToPositiveInfinity);
                         break;
-
                     case 14:
                     case 87:
-                        if (sector.Name.Contains("Написать", StringComparison.OrdinalIgnoreCase))
-                        {
-                            cost = 0.17m;
-                        }
+                        if (sector.Name.Contains("Написать", StringComparison.OrdinalIgnoreCase)) cost = 0.17m;
                         else
                         {
-                            if (blankThick <= 0.55f)
-                                cost = (decimal)(blankContSum / 1000 * 0.05);
-                            else if (blankThick <= 0.7f)
-                                cost = (decimal)(blankContSum / 1000 * 0.08);
-                            else if (blankThick <= 1f)
-                                cost = (decimal)(blankContSum / 1000 * 0.03);
-                            else if (blankThick <= 1.5f)
-                                cost = (decimal)(blankContSum / 1000 * 0.09);
-                            else if (blankThick <= 2f)
-                                cost = (decimal)(blankContSum / 1000 * 0.2);
-                            else if (blankThick <= 3f)
-                                cost = (decimal)(blankContSum / 1000 * 0.4);
-                            else if (blankThick > 3f)
-                                cost = (decimal)(blankContSum / 1000 * 0.9);
-
+                            if (blankThick <= 0.55f) cost = (decimal)(blankContSum / 1000 * 0.05);
+                            else if (blankThick <= 0.7f) cost = (decimal)(blankContSum / 1000 * 0.08);
+                            else if (blankThick <= 1f) cost = (decimal)(blankContSum / 1000 * 0.03);
+                            else if (blankThick <= 1.5f) cost = (decimal)(blankContSum / 1000 * 0.09);
+                            else if (blankThick <= 2f) cost = (decimal)(blankContSum / 1000 * 0.2);
+                            else if (blankThick <= 3f) cost = (decimal)(blankContSum / 1000 * 0.4);
+                            else cost = (decimal)(blankContSum / 1000 * 0.9);
                             cost = Math.Round(cost, 3, MidpointRounding.ToPositiveInfinity);
                         }
                         break;
-
-                    case 71:
-                        cost = 18m;
-                        break;
-                    case 70:
-                        cost = 3m;
-                        break;
-                    case 64:
-                        cost = 20m;
-                        break;
-                    case 75:
-                        cost = 0.6m;
-                        break;
-                    case 79:
-                        cost = 1m;
-                        break;
-                    case 78:
-                        cost = 2.9m;
-                        break;
-                    case 76:
-                        cost = 0.15m;
-                        break;
+                    case 71: cost = 18m; break;
+                    case 70: cost = 3m; break;
+                    case 64: cost = 20m; break;
+                    case 75: cost = 0.6m; break;
+                    case 79: cost = 1m; break;
+                    case 78: cost = 2.9m; break;
+                    case 76: cost = 0.15m; break;
                     case 74:
                         tmpCost = Math.Round(blanklen / 1000 * 0.025, 3, MidpointRounding.ToPositiveInfinity);
                         cost = (decimal)tmpCost;
                         break;
-                    default:
-                        cost = 0;
-                        break;
                 }
             }
-            catch (Exception)
-            {
-                cost = 0;
-            }
+            catch { cost = 0; }
 
             return cost;
         }
