@@ -1,0 +1,202 @@
+﻿<!-- PartComponentStyles.xaml -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Общие стили для карточек -->
+    <Style x:Key="CardStyle" TargetType="Border">
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="#E0E0E0"/>
+        <Setter Property="Margin" Value="0,5,0,0"/>
+        <Setter Property="Padding" Value="15 5"/>
+    </Style>
+    
+    <!-- Общие стили для карточек -->
+    <Style x:Key="CardStyleExpander" TargetType="Expander">
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="BorderBrush" Value="#E0E0E0"/>
+        <Setter Property="Margin" Value="0,5,0,0"/>
+        <Setter Property="Padding" Value="15 5"/>
+    </Style>
+
+    <!-- Стиль для заголовков разделов -->
+    <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="#1976D2"/>
+    </Style>
+
+    <!-- Стиль для групп свойств -->
+    <Style x:Key="PropertyGroupStyle" TargetType="DockPanel">
+        <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+
+    
+    <!-- Стиль для меток свойств -->
+    <Style x:Key="PropertyLabelStyle" TargetType="TextBlock">
+        <Setter Property="Width" Value="120"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="#616161"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Стиль для заголовка таблицы свойств -->
+    <Style x:Key="PropertiesDataGridHeader" TargetType="DataGridColumnHeader">
+        <Setter Property="Background" Value="#c4b5fd"/>
+        <Setter Property="Foreground" Value="#616161"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="Height" Value="25"/>
+    </Style>
+
+    <!-- Стиль для значений таблицы значений свойств -->
+    <Style x:Key="PropertiesDataGrid" TargetType="DataGrid">
+        <Setter Property="HeadersVisibility" Value="Column"/>
+        <Setter Property="AlternatingRowBackground" Value="#d2f9e6"/>
+        <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="#BDBDBD"/>
+        <Setter Property="AutoGenerateColumns" Value="False"/>
+        <Setter Property="CanUserAddRows" Value="False"/>
+        <Setter Property="CanUserDeleteRows" Value="False"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="ColumnHeaderStyle" Value="{StaticResource PropertiesDataGridHeader}"/>
+    </Style>
+
+    
+
+    <!-- Стиль для значений свойств -->
+    <Style x:Key="PropertyValueStyle" TargetType="Control">
+        <Setter Property="Margin" Value="8,0,0,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+        <!-- Стиль для ComboBox -->
+    <Style x:Key="ModernComboBox" BasedOn="{StaticResource {x:Type ComboBox}}" TargetType="ComboBox">
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="BorderBrush" Value="#BDBDBD"/>
+        <Setter Property="Background" Value="White"/>
+    </Style>
+
+    <!-- Стиль для TextBox -->
+    <Style x:Key="ModernTextBox" BasedOn="{StaticResource {x:Type TextBox}}" TargetType="TextBox">
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="BorderBrush" Value="#BDBDBD"/>
+        <Setter Property="Background" Value="White"/>
+    </Style>
+
+    <!-- Стиль для TextBlock (только чтение) -->
+    <Style x:Key="ReadOnlyValueStyle" TargetType="TextBlock">
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="Background" Value="#F5F5F5"/>
+        <Setter Property="Foreground" Value="#212121"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    
+    <!-- Стиль для TextBox (только чтение) -->
+    <Style x:Key="ReadOnlyTextBox" BasedOn="{StaticResource ModernTextBox}" TargetType="TextBox">
+        <Setter Property="BorderBrush" Value="#F5F5F5"/>
+        <Setter Property="Background" Value="#F5F5F5"/>
+        <Setter Property="IsReadOnly" Value="True"/>
+    </Style>
+
+    <!-- Стиль для TabControl -->
+    <Style x:Key="ModernTabControl" TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Margin" Value="0,8,0,0"/>
+    </Style>
+
+    <!-- Стиль для TabItem -->
+    <Style x:Key="ModernTabItem" TargetType="TabItem">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Grid>
+                        <Border Name="Border" 
+                              Background="#F5F5F5" 
+                              BorderBrush="#E0E0E0" 
+                              BorderThickness="1,1,1,0"
+                              CornerRadius="4,4,0,0"
+                              Margin="2,0,2,0"
+                              Padding="12,8">
+                            <ContentPresenter x:Name="ContentSite"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            ContentSource="Header"
+                                            Margin="0"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Border" Property="Background" Value="White"/>
+                            <Setter TargetName="Border" Property="BorderBrush" Value="#E0E0E0"/>
+                            <Setter Property="Foreground" Value="#1976D2"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Border" Property="Background" Value="#F0F0F0"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Стиль для DataGrid компонентов -->
+    <Style x:Key="ComponentsDataGrid" TargetType="DataGrid">
+        <Setter Property="AutoGenerateColumns" Value="False"/>
+        <Setter Property="CanUserAddRows" Value="False"/>
+        <Setter Property="CanUserDeleteRows" Value="False"/>
+        <Setter Property="IsReadOnly" Value="True"/>
+        <Setter Property="SelectionMode" Value="Single"/>
+        <Setter Property="SelectionUnit" Value="FullRow"/>
+        <Setter Property="GridLinesVisibility" Value="None"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="RowBackground" Value="White"/>
+        <Setter Property="AlternatingRowBackground" Value="#F5F5F5"/>
+        <Setter Property="HeadersVisibility" Value="Column"/>
+        <Setter Property="Margin" Value="0,8,0,0"/>
+        <Setter Property="MaxHeight" Value="300"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="ColumnHeaderStyle" Value="{StaticResource PropertiesDataGridHeader}"/>
+    </Style>
+
+    <!-- Стиль для статистических блоков -->
+    <Style x:Key="StatBlockStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="Margin" Value="0,0,8,8"/>
+    </Style>
+
+    <!-- Стиль для текста статистики -->
+    <Style x:Key="StatLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource PropertyLabelStyle}">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Margin" Value="0,0,4,0"/>
+        <Setter Property="Width" Value="Auto"/>
+    </Style>
+
+    <!-- Стиль для счетчиков -->
+    <Style x:Key="StatCounterStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="#212121"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Цвета для разных типов компонентов -->
+    <SolidColorBrush x:Key="TotalComponentsColor" Color="#E3F2FD"/>
+    <SolidColorBrush x:Key="PartsColor" Color="#F3E5F5"/>
+    <SolidColorBrush x:Key="AssembliesColor" Color="#E8F5E8"/>
+    <SolidColorBrush x:Key="PurchasedColor" Color="#FFF3E0"/>
+    <SolidColorBrush x:Key="SheetMetalColor" Color="#FCE4EC"/>
+
+    <!-- Стиль для контейнера статистики -->
+    <Style x:Key="StatsContainerStyle" TargetType="WrapPanel">
+        <Setter Property="Margin" Value="0,8,0,0"/>
+    </Style>
+
+</ResourceDictionary>

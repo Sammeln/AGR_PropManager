@@ -1,0 +1,80 @@
+﻿<!-- File: Views/Reports/ImportClassifierReportView.xaml -->
+<Window x:Class="AGR_PropManager.Views.Reports.ImportClassifierReportWindow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:AGR_PropManager.Views.Reports"
+             xmlns:vmRep="clr-namespace:AGR_PropManager.ViewModels.Reports"
+    mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vmRep:ImportClassifierReportViewModel, IsDesignTimeCreatable=True}"
+             d:DesignHeight="600" d:DesignWidth="1000">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Style/PartComponentStyle.xaml"/>
+                <ResourceDictionary Source="../Style/SpecificationStyle.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- Button and status bar -->
+            <RowDefinition Height="*"/>
+            <!-- DataGrid -->
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="auto"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="1" Orientation="Vertical" Margin="10">
+            <TextBlock Text="Отчет импорта классификатора" FontSize="18" Margin="0,0,0,10"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,10">
+                <Button Content="Сохранить в Excel" Command="{Binding ExportToExcelCommand}"/>
+            </StackPanel>
+        </StackPanel>
+
+        <DataGrid Grid.Row="1" Grid.Column="0"  Style="{StaticResource PropertiesDataGrid}"
+                  ItemsSource="{Binding ReportData, Mode=OneWay}" 
+                  AutoGenerateColumns="False"
+                  GridLinesVisibility="Vertical"
+                  VerticalGridLinesBrush="LightGray"
+                  SelectionMode="Single"
+                  CanUserAddRows="False"
+                  IsReadOnly="True"
+                  Margin="10">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="#" Binding="{Binding RowCount}" Width="SizeToHeader" ElementStyle="{StaticResource CenterAlignedTextStyle}"/>
+                <!--Наименование -->
+                <DataGridTextColumn Header="Наименование" Binding="{Binding Name}" Width="2*" />
+                <!--ТИП -->
+                <DataGridTextColumn Header="ТИП" Binding="{Binding Type}" Width="*" ElementStyle="{StaticResource CenterAlignedTextStyle}"/>
+                <!--Partnumber -->
+                <DataGridTextColumn Header="Partnumber" Binding="{Binding Partnumber}" Width="*" ElementStyle="{StaticResource CenterAlignedTextStyle}"/>
+                <!--Основная ЕИ -->
+                <DataGridTextColumn Header="Основная ЕИ" Binding="{Binding MainUnit}" Width="*" ElementStyle="{StaticResource CenterAlignedTextStyle}"/>
+                <!--URL -->
+                <DataGridTextColumn Header="URL" Binding="{Binding URL}" Width="3*" ElementStyle="{StaticResource CenterAlignedTextStyle}"/>
+                <!--Артикул -->
+                <DataGridTextColumn Header="Артикул" Binding="{Binding Article}" Width="1*" ElementStyle="{StaticResource CenterAlignedTextStyle}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        <!--<Border Grid.Column="1" Grid.Row="1"
+             Style="{StaticResource ErrorBorderStyle}"
+             Visibility="{Binding HasErrors, Converter={StaticResource BoolToVisibilityConverter}}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Text="Ошибки:" 
+                        FontWeight="Bold" 
+                        Style="{StaticResource ErrorTextblockStyle}"/>
+                    <TextBlock Text="{Binding Errors}"
+                        Style="{StaticResource ErrorTextblockStyle}"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>-->
+
+    </Grid>
+</Window>

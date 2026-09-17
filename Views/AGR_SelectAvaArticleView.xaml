@@ -1,0 +1,99 @@
+﻿<!-- File: Views/Windows/AGR_SelectAvaArticleView.xaml -->
+<Window x:Class="AGR_PropManager.Views.AGR_SelectAvaArticleView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors" 
+        xmlns:local="clr-namespace:AGR_PropManager.ViewModels.Windows"
+        xmlns:vm="clr-namespace:AGR_PropManager.ViewModels.Windows"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:AGR_SelectAvaArticleVM, IsDesignTimeCreatable=True}"
+        Title="Выбор AvaArticle" Height="600" Width="1200"
+        ResizeMode="CanResizeWithGrip"
+        x:Name="ThisWindow">
+
+    <i:Interaction.Triggers>
+        <!-- Триггер для закрытия окна при изменении свойства IsDialogResultAccepted -->
+        <!--<i:DataTrigger Binding="{Binding IsDialogResultAccepted}" Value="True">
+            <i:ChangePropertyAction PropertyName="DialogResult" Value="True" />
+            <i:CallMethodAction MethodName="Close" TargetObject="{Binding ElementName=ThisWindow}" />
+        </i:DataTrigger>
+        <i:DataTrigger Binding="{Binding IsDialogResultAccepted}" Value="False">
+            <i:ChangePropertyAction PropertyName="DialogResult" Value="False" />
+            <i:CallMethodAction MethodName="Close" TargetObject="{Binding ElementName=ThisWindow}" />
+        </i:DataTrigger>-->
+    </i:Interaction.Triggers>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Панель поиска -->
+        <Border Grid.Row="0" Background="LightGray" Padding="10" Margin="5">
+            <StackPanel Orientation="Horizontal">
+                <Label Content="Поиск:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox x:Name="SearchTextBox"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         MinWidth="200"/>
+                <DockPanel>
+                    <Label Content="Тип компонента:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <ComboBox   
+                        ItemsSource="{Binding AvailableAvaTypes}"
+                        SelectedItem="{Binding SelectedAvaType}"
+                        MinWidth="120" Margin="0,0,10,0">
+                    </ComboBox>
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- DataGrid -->
+        <DataGrid Grid.Row="1"
+                  x:Name="AvaArticlesDataGrid"
+                  ItemsSource="{Binding AvaArticlesView}" 
+                  SelectedItem="{Binding SelectedArticle}"
+            
+            AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  HeadersVisibility="Column"
+                  SelectionMode="Single"
+                  IsReadOnly="True">
+            <i:Interaction.Triggers>
+                <!-- Привязка события MouseDoubleClick к команде в VM -->
+                <!-- Передаем выбранный элемент (SelectedItem) как параметр -->
+                <i:EventTrigger EventName="MouseDoubleClick">
+                    <i:InvokeCommandAction Command="{Binding SelectItemCommand}" CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                    <i:InvokeCommandAction Command="{Binding AcceptSelectionCommand}"/>
+                    <i:CallMethodAction MethodName="Close" TargetObject="{Binding ElementName=ThisWindow}" />
+                </i:EventTrigger>
+            </i:Interaction.Triggers>
+            <DataGrid.Columns>
+                <!-- Article (PartNumber) -->
+                <DataGridTextColumn Header="Article" Binding="{Binding Article}" Width="*" />
+                <!-- Name -->
+                <DataGridTextColumn Header="Наименование" Binding="{Binding Name}" Width="2*" />
+                <!-- PartNumber -->
+                <DataGridTextColumn Header="Обозначение" Binding="{Binding PartNumber}" Width="*" />
+                <!-- Остаток -->
+                <DataGridTextColumn Header="Остаток" Binding="{Binding Count}" Width="*" />
+                <!-- ЕИ -->
+                <DataGridTextColumn Header="ЕИ" Binding="{Binding MainUOM}" Width="*" />
+                <!-- Type -->
+                <DataGridTextColumn Header="Тип" Binding="{Binding Type}" Width="*" />
+            </DataGrid.Columns>
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Type}" Value="(Не закупать)">
+                            <Setter Property="Background" Value="IndianRed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+            
+        </DataGrid>
+    </Grid>
+</Window>
