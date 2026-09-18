@@ -200,38 +200,54 @@ namespace AGR_PropManager.ViewModels.Windows
             {
                 switch (sector.WorkStationId)
                 {
+                    //Листогиб
                     case 13:
-                        var tmpCost = blankBends * 0.3 + 0.25;
-                        cost = Math.Round((decimal)tmpCost, 3, MidpointRounding.ToPositiveInfinity);
-                        break;
+                    var tmpCost = blankBends * 0.3 + 0.25;
+                    cost = Math.Round((decimal)tmpCost, 3, MidpointRounding.ToPositiveInfinity);
+                    break;
+                    //старый неактуальный trumpf
                     case 14:
+                    //лазер
                     case 87:
-                        if (sector.Name.Contains("Написать", StringComparison.OrdinalIgnoreCase)) cost = 0.17m;
-                        else
-                        {
-                            if (blankThick <= 0.55f) cost = (decimal)(blankContSum / 1000 * 0.05);
-                            else if (blankThick <= 0.7f) cost = (decimal)(blankContSum / 1000 * 0.08);
-                            else if (blankThick <= 1f) cost = (decimal)(blankContSum / 1000 * 0.03);
-                            else if (blankThick <= 1.5f) cost = (decimal)(blankContSum / 1000 * 0.09);
-                            else if (blankThick <= 2f) cost = (decimal)(blankContSum / 1000 * 0.2);
-                            else if (blankThick <= 3f) cost = (decimal)(blankContSum / 1000 * 0.4);
-                            else cost = (decimal)(blankContSum / 1000 * 0.9);
-                            cost = Math.Round(cost, 3, MidpointRounding.ToPositiveInfinity);
-                        }
-                        break;
+                    if (sector.Name.Contains("Написать", StringComparison.OrdinalIgnoreCase)) cost = 0.17m;
+                    else
+                    {
+                        if (blankThick <= 0.55f) cost = (decimal)(blankContSum / 1000 * 0.05);
+                        else if (blankThick <= 0.7f) cost = (decimal)(blankContSum / 1000 * 0.08);
+                        else if (blankThick <= 1f) cost = (decimal)(blankContSum / 1000 * 0.03);
+                        else if (blankThick <= 1.5f) cost = (decimal)(blankContSum / 1000 * 0.09);
+                        else if (blankThick <= 2f) cost = (decimal)(blankContSum / 1000 * 0.2);
+                        else if (blankThick <= 3f) cost = (decimal)(blankContSum / 1000 * 0.4);
+                        else cost = (decimal)(blankContSum / 1000 * 0.9);
+                        cost = Math.Round(cost, 3, MidpointRounding.ToPositiveInfinity);
+                    }
+                    break;
+                    //Отбортовка
                     case 71: cost = 18m; break;
+                    //Покраска
                     case 70: cost = 3m; break;
+                    //формовка
                     case 64: cost = 20m; break;
+                    //пила пластик
                     case 75: cost = 0.6m; break;
+                    //пила fe
                     case 79: cost = 1m; break;
+                    //пила AL
                     case 78: cost = 2.9m; break;
+                    //гильотина
                     case 76: cost = 0.15m; break;
+                    //парвильно-отрезеой
                     case 74:
-                        tmpCost = Math.Round(blanklen / 1000 * 0.025, 3, MidpointRounding.ToPositiveInfinity);
-                        cost = (decimal)tmpCost;
-                        break;
+                    tmpCost = Math.Round(blanklen / 1000 * 0.025, 3, MidpointRounding.ToPositiveInfinity);
+                    cost = (decimal)tmpCost;
+                    break;
+                    //Дырокол
+                    case 83: cost = 5m; break;
+                    //Вальцы Fl
+                    case 81: cost = 3m; break;
+                    //Вальцы Ob
+                    case 82: cost = 3m; break;
                 }
-            }
             catch { cost = 0; }
 
             return cost;
